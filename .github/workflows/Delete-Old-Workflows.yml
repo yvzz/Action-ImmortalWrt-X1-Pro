@@ -1,0 +1,54 @@
+name: Delete Old Workflows
+
+on:
+  workflow_dispatch:
+    inputs:
+      delete_all_failed:
+        description: '是否删除全部失败的 Workflow'
+        required: true
+        type: choice
+        default: 'NO'
+        options:
+          - 'YES'
+          - 'NO'
+      retain_days:
+        description: '保留最近几天的 Workflow'
+        required: true
+        type: number
+        default: 1
+  schedule:
+    - cron: 0 3 * * 0
+
+jobs:
+  Cleaning:
+    runs-on: ubuntu-24.04
+
+    steps:
+    - name: Delete All Failed Workflows
+      if: ${{ inputs.delete_all_failed == 'YES' }}
+      uses: Mattraks/delete-workflow-runs@main
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        retain_days: 0
+        keep_minimum_runs: 0
+        delete_run_by_conclusion_pattern: failure
+
+    - name: Delete Old Workflows By Days
+      if: ${{ inputs.delete_all_failed != 'YES' }}
+      uses: Mattraks/delete-workflow-runs@main
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        retain_days: ${{ inputs.retain_days || 1 }}
+        keep_minimum_runs: ${{ inputs.retain_days || 1 }}
+        delete_run_by_conclusion_pattern: ''
+
+    - name: Delete Old Releases
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        KEEP=5
+        RELEASES=$(gh release list -R ${{ github.repository }} --limit 100 --json tagName,createdAt -q 'sort_by(.createdAt) | reverse | .['"$KEEP"':] | .[].tagName')
+        for tag in $RELEASES; do
+          echo "Deleting release: $tag"
+          gh release delete "$tag" -R ${{ github.repository }} --yes --cleanup-tag
+        done
