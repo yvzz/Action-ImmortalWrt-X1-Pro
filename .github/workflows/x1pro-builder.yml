@@ -286,17 +286,17 @@ jobs:
           **Build Date:** $(date +"%Y-%m-%d %H:%M:%S")
           **Compiler:** GCC with ccache
 
-          ## Flash Layout (ubootmod 112M)
+          ## Flash Layout (x1pro-mod-112m)
 
           | Partition | Size  | Offset   |
           |-----------|-------|----------|
           | BL2       | 1024k | 0x0      |
           | u-boot-env| 512k | 0x100000 |
           | Factory   | 2048k | 0x180000 |
-          | FIP       | 2048k | 0x280000 |
-          | bdinfo    | 512k  | 0x480000 |
-          | kpanic   | 2048k | 0x500000 |
-          | ubi       | 114688k | 0x800000 |
+          | FIP       | 2048k | 0x380000 |
+          | bdinfo    | 512k  | 0x580000 |
+          | kpanic   | 2048k | 0x600000 |
+          | ubi_0     | 114688k | 0x800000 |
 
           ## Download
 
