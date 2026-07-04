@@ -36,13 +36,15 @@ if [ -f "$WORKSPACE/mt7981b-oray-x1-pro.dts" ]; then
      target/linux/mediatek/files/arch/arm64/boot/dts/mediatek/
 
   # ---------- 2. Device definition in filogic.mk ----------
+  # Only append if not already present (prevents duplicates on re-run)
+  if ! grep -q 'define Device/oray_x1_pro' target/linux/mediatek/image/filogic.mk 2>/dev/null; then
   cat >> target/linux/mediatek/image/filogic.mk << 'EOF'
 
 define Device/oray_x1_pro
   DEVICE_VENDOR := Oray
   DEVICE_MODEL := X1 Pro
   DEVICE_DTS := mt7981b-oray-x1-pro
-  SUPPORTED_DEVICES := oray,x1_pro cudy,tr3000-v1-ubootmod
+  SUPPORTED_DEVICES += oray,x1_pro cudy,tr3000-v1-ubootmod
   UBINIZE_OPTS := -E 5
   BLOCKSIZE := 128k
   PAGESIZE := 2048
@@ -53,6 +55,9 @@ define Device/oray_x1_pro
 endef
 TARGET_DEVICES += oray_x1_pro
 EOF
+  else
+    echo "  Skipping: oray_x1_pro already defined in filogic.mk"
+  fi
 
   # ---------- 3. Patch upstream scripts to add X1 Pro ----------
   python3 << 'PYEOF'
