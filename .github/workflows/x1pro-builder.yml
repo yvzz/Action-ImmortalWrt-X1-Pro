@@ -317,7 +317,12 @@ jobs:
           tag_name: ${{ steps.tag.outputs.release_tag }}
           body_path: release.txt
           prerelease: ${{ env.PRERELEASE == 'true' }}
-          files: openwrt/bin/targets/mediatek/filogic/*
+          # 只发布刷机用的 bin 文件，排除 kernel、rootfs、manifest 等中间产物
+          files: |
+            openwrt/bin/targets/mediatek/filogic/*-squashfs-sysupgrade.bin
+            openwrt/bin/targets/mediatek/filogic/*-squashfs-factory.bin
+            openwrt/bin/targets/mediatek/filogic/*-initramfs-factory.bin
+            openwrt/bin/targets/mediatek/filogic/*-initramfs-sysupgrade.bin
 
       - name: Delete old workflow runs
         uses: Mattraks/delete-workflow-runs@v2
