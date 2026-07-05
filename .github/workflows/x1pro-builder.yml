@@ -214,6 +214,7 @@ jobs:
 
       - name: Verify X1Pro DTS integration
         run: |
+          cd openwrt
           echo "=== Checking DTS file ==="
           ls -la target/linux/mediatek/files/arch/arm64/boot/dts/mediatek/mt7981b-oray-x1-pro.dts 2>/dev/null || echo "WARNING: DTS not found!"
           echo ""
