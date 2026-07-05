@@ -240,3 +240,7 @@
 	nvmem-cells = <&eeprom_factory_0>;
 	nvmem-cell-names = "eeprom";
 };
+
+&ubi {
+	reg = <0x800000 0x7000000>;
+};
