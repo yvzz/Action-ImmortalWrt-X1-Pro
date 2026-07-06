@@ -44,19 +44,19 @@ on:
         default: 1
 
       delete_cancelled:
-        description: '☑ 删除 cancelled 状态'
+        description: '删除 cancelled 状态'
         required: false
         type: boolean
         default: false
 
       delete_failure:
-        description: '☑ 删除 failure 状态'
+        description: '删除 failure 状态'
         required: false
         type: boolean
         default: false
 
       delete_success:
-        description: '☑ 删除 success 状态'
+        description: '删除 success 状态'
         required: false
         type: boolean
         default: false
@@ -178,19 +178,6 @@ jobs:
     # 勾选 do_workflows 时运行；定时触发也运行
     if: ${{ inputs.do_workflows || github.event_name == 'schedule' }}
     steps:
-      # ── ① 默认清理 Queued 状态的 Run（始终执行） ──
-      - name: Delete Queued Runs
-        run: |
-          echo "▸ 清理 Queued 状态的 Workflow Runs（默认执行）"
-          queued=$(gh run list --json id,status --jq '.[] | select(.status == "queued") | .id')
-          if [ -z "$queued" ]; then
-            echo "  没有 Queued 的 Run"
-          else
-            echo "$queued" | while read rid; do
-              [ -n "$rid" ] && gh run delete "$rid" --repo ${{ github.repository }} 2>/dev/null && echo "  ✓ queued run: $rid"
-            done
-          fi
-
       # ── ② 按时间删除（时间优先级最高，勾选后忽略状态勾选） ──
       - name: Delete by Time
         if: ${{ inputs.delete_by_time }}
