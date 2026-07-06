@@ -49,7 +49,6 @@ env:
   REPO_BRANCH: openwrt-24.10-6.6
   REPO_COMMIT: ${{ github.event.inputs.commit }}
   FEEDS_CONF: feeds.conf.default
-  DIY_P1_SH: diy-part1.sh
   DIY_P2_SH: diy-part2.sh
   CONFIG_FILE: config/X1Pro.config
   UPLOAD_RELEASE: ${{ github.event.inputs.release || github.event.client_payload.release }}
@@ -93,15 +92,23 @@ jobs:
             cp -f "$GITHUB_WORKSPACE/${CONFIG_FILE}" /workdir/openwrt/.config
           fi
 
-      - name: Load custom feeds
+      - name: Apply patches
+        working-directory: /workdir/openwrt
         run: |
-          [ -e $FEEDS_CONF ] && mv $FEEDS_CONF openwrt/feeds.conf.default
-          chmod +x $DIY_P1_SH
-          cd openwrt
-          $GITHUB_WORKSPACE/$DIY_P1_SH
+          # 复制自定义 DTS 文件链（与 success-build 一致）
+          mkdir -p target/linux/mediatek/dts
+          cp $GITHUB_WORKSPACE/mt7981b-oray-x1pro-v1.dtsi target/linux/mediatek/dts/
+          cp $GITHUB_WORKSPACE/mt7981b-oray-x1pro-v1.dts target/linux/mediatek/dts/
+          cp $GITHUB_WORKSPACE/mt7981b-oray-x1pro-v1-ubootmod.dts target/linux/mediatek/dts/
+          # 复制 repo filogic.mk（整体替换上游，包含 oray_x1pro-v1-ubootmod 设备定义）
+          cp $GITHUB_WORKSPACE/filogic.mk target/linux/mediatek/image/
+          # 复制 feeds 配置
+          cp $GITHUB_WORKSPACE/$FEEDS_CONF .
 
       - name: Update & Install feeds
-        run: cd openwrt && ./scripts/feeds update -a && ./scripts/feeds install -a
+        run: |
+          cd openwrt
+          ./scripts/feeds update -a && ./scripts/feeds install -a
 
       - name: Load custom configuration
         run: |
@@ -124,9 +131,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add "$CONFIG_FILE"
-
           CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
-
           git diff --cached --quiet || (
             git commit -m "Update config: ${CONFIG_FILE}" || true
             git pull --rebase origin $CURRENT_BRANCH
@@ -141,10 +146,9 @@ jobs:
       - name: Check Runner
         run: |
           echo "=== Runner Performance ==="
-          echo "CPU 型号: $(cat /proc/cpuinfo | grep 'model name' | head -1 | awk -F: '{print $2}')"
-          echo "CPU 核心数: $(nproc)"
-          echo "已安装内存: $(sudo lshw -short -C memory | grep GiB | head -1)"
-          echo "硬盘: $(ls /dev/sd* | grep -v [1-9] | wc -l) 块 $(df -hT / | tail -1 | awk '{print $3}')"
+          echo "CPU: $(nproc) cores ($(cat /proc/cpuinfo | grep 'model name' | head -1 | awk -F: '{print $2}'))"
+          echo "Memory: $(free -h | awk '/^Mem:/ {print $2}')"
+          echo "Disk: $(df -hT / | tail -1 | awk '{print $3 " " $2}')"
 
       - name: Checkout
         uses: actions/checkout@v7
@@ -169,14 +173,12 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update -qq
-          # 精简依赖：只装编译必需项，不装编辑器/ninja/msmtp等无关包
           sudo apt-get install -y --no-install-recommends \
             build-essential gawk unzip file wget python3 \
             python3-pip python3-setuptools python3-yaml \
             rsync curl git \
             libncurses-dev libssl-dev libelf-dev \
             zlib1g-dev time subversion gettext patch perl \
-            libncurses-dev libssl-dev device-tree-compiler \
             squashfs-tools \
             python3-ply python3-docutils python3-pyelftools \
             ccache
@@ -211,55 +213,44 @@ jobs:
           ccache --set-config=compression=true
           ccache -z
 
-      - name: Load feeds & DIY scripts
+      - name: Apply patches
+        working-directory: /workdir/openwrt
         run: |
-          cd openwrt
-          [ -e $GITHUB_WORKSPACE/$FEEDS_CONF ] && mv $GITHUB_WORKSPACE/$FEEDS_CONF feeds.conf.default
-          chmod +x $GITHUB_WORKSPACE/$DIY_P1_SH
-          $GITHUB_WORKSPACE/$DIY_P1_SH
+          # 复制自定义 DTS 文件链（与 success-build 一致）
+          mkdir -p target/linux/mediatek/dts
+          cp $GITHUB_WORKSPACE/mt7981b-oray-x1pro-v1.dtsi target/linux/mediatek/dts/
+          cp $GITHUB_WORKSPACE/mt7981b-oray-x1pro-v1.dts target/linux/mediatek/dts/
+          cp $GITHUB_WORKSPACE/mt7981b-oray-x1pro-v1-ubootmod.dts target/linux/mediatek/dts/
+          # 复制 repo filogic.mk（整体替换上游，包含 oray_x1pro-v1-ubootmod 设备定义）
+          cp $GITHUB_WORKSPACE/filogic.mk target/linux/mediatek/image/
+          # 复制 feeds 配置
+          cp $GITHUB_WORKSPACE/$FEEDS_CONF .
+
+      - name: Update & Install feeds
+        working-directory: /workdir/openwrt
+        run: |
           ./scripts/feeds update -a
           ./scripts/feeds install -a
+
+      - name: Load custom configuration
+        run: |
+          cd openwrt
+          # 使用预先生成的完整配置
+          cp -f $GITHUB_WORKSPACE/$CONFIG_FILE .config
           chmod +x $GITHUB_WORKSPACE/$DIY_P2_SH
           $GITHUB_WORKSPACE/$DIY_P2_SH
-
-      - name: Verify X1Pro DTS integration
-        run: |
-          cd openwrt
-          echo "=== Checking DTS file ==="
-          ls -la target/linux/mediatek/files/arch/arm64/boot/dts/mediatek/mt7981b-oray-x1-pro.dts \
-            2>/dev/null && echo "✓ DTS found" || echo "✗ WARNING: DTS not found!"
-          echo ""
-          echo "=== Checking filogic.mk for oray_x1_pro ==="
-          grep -A 10 "oray_x1_pro" target/linux/mediatek/image/filogic.mk \
-            && echo "✓ oray_x1_pro found" || echo "✗ WARNING: oray_x1_pro NOT found!"
-          echo ""
-          echo "=== DTS partition layout ==="
-          grep -A 2 "partition@" target/linux/mediatek/files/arch/arm64/boot/dts/mediatek/mt7981b-oray-x1-pro.dts || true
-
-      - name: Configure Firmware
-        run: |
-          cd openwrt
-          # 使用预先生成的完整配置（dev config 已在 config/X1Pro.config 中）
-          cp -f $GITHUB_WORKSPACE/$CONFIG_FILE .config
+          # 应用 defconfig 确保依赖完整
           make defconfig
-
-          # 确保 oray_x1_pro 设备定义存在
-          if grep -q "oray_x1_pro" target/linux/mediatek/image/filogic.mk; then
-            echo "✓ oray_x1_pro found in filogic.mk"
-          else
-            echo "✗ oray_x1_pro NOT found in filogic.mk — build will likely fail!"
-          fi
 
       - name: Compile Firmware
         id: compile
         run: |
           cd openwrt
 
-          # 下载所有依赖（先完整下载，避免编译中途卡住）
+          # 下载所有依赖
           make download -j$(nproc)
 
           # 跳过 ipk 包编译，只编译内核 + rootfs + sysupgrade.bin
-          # 直接 echo 写入，不依赖 sed（避免注释行不匹配问题）
           if grep -q "^# CONFIG_SKIP_PACKAGE_BUILD is not set$" .config; then
             sed -i 's/^# CONFIG_SKIP_PACKAGE_BUILD is not set/CONFIG_SKIP_PACKAGE_BUILD=y/' .config
           elif ! grep -q "^CONFIG_SKIP_PACKAGE_BUILD=y$" .config; then
@@ -270,30 +261,28 @@ jobs:
           if ${{ inputs.verbose }}; then
             make -j$(nproc) V=s 2>&1 | tee build.log
           else
-            make -j$(nproc) 2>&1 | tail -20
+            make -j$(nproc) 2>&1 | tail -30
           fi
 
           # 验证固件是否生成
-          SYSUPGRADE=$(find bin/targets -name "*oray_x1_pro*-sysupgrade.bin" 2>/dev/null | head -1)
+          SYSUPGRADE=$(find bin/targets -name "*oray_x1pro-v1-ubootmod*sysupgrade.bin" 2>/dev/null | head -1)
           if [ -n "$SYSUPGRADE" ]; then
-            echo "✓ Firmware built: $SYSUPGRADE"
-            echo "size=$(stat -c%s "$SYSUPGRADE")" >> $GITHUB_OUTPUT
+            echo "Firmware built: $SYSUPGRADE ($(du -h "$SYSUPGRADE" | cut -f1))"
             echo "name=$(basename "$SYSUPGRADE")" >> $GITHUB_OUTPUT
             echo "status=success" >> $GITHUB_OUTPUT
           else
-            echo "✗ Firmware NOT found!"
-            find bin/targets -name "*.bin" 2>/dev/null | head -5 || echo "No .bin files found"
+            echo "ERROR: No firmware found!"
+            find bin/targets -name "*.bin" 2>/dev/null | head -10
             echo "status=failure" >> $GITHUB_OUTPUT
             exit 1
           fi
 
-          echo "X1Pro build finished."
           df -hT /workdir
 
       - name: List build artifacts
         run: |
           echo "=== Firmware artifacts ==="
-          find openwrt/bin/targets -name "*oray_x1_pro*" 2>/dev/null | while read f; do
+          find openwrt/bin/targets -name "*oray_x1pro-v1-ubootmod*" 2>/dev/null | while read f; do
             echo "  $(basename $f) ($(du -h "$f" | cut -f1))"
           done
 
@@ -305,7 +294,6 @@ jobs:
             /workdir/.ccache
             /workdir/openwrt/dl
           key: ${{ runner.os }}-openwrt-x1pro-${{ env.REPO_BRANCH }}-${{ hashFiles('config/X1Pro.config') }}
-          # 编译完后无条件保存 cache，下次可复用
 
       - name: Upload Binaries (Artifacts)
         uses: actions/upload-artifact@v7
@@ -313,7 +301,7 @@ jobs:
         with:
           name: ImmortalWrt_X1Pro-openwrt-24.10-6.6-${{ env.BUILD_DATE }}
           path: |
-            openwrt/bin/targets/mediatek/filogic/*oray_x1_pro*-sysupgrade.bin
+            openwrt/bin/targets/mediatek/filogic/*oray_x1pro-v1-ubootmod*sysupgrade.bin
 
       - name: Generate Release Tag
         id: tag
@@ -329,12 +317,11 @@ jobs:
             '' \
             'Device: Oray X1 Pro (ubootmod, 112M UBI)' \
             'Branch: openwrt-24.10-6.6' \
-            'Supported Devices (uboot check): cudy,tr3000-v1-ubootmod' \
+            'Supported Devices: R47' \
             '' \
             '## Downloads' \
             '' \
             'Download from the Assets section below, then flash via uboot Web UI.' \
-            'Pre-flash: setenv mtd_layout x1pro-mod-112m; saveenv; reset' \
             '' \
             'Built with GitHub Actions' \
             > release.txt
@@ -346,7 +333,7 @@ jobs:
         if: steps.tag.outputs.status == 'success'
         run: |
           FIRMWARE_DIR="openwrt/bin/targets/mediatek/filogic"
-          SYSUPGRADE_FILES=$(ls "$FIRMWARE_DIR"/*oray_x1_pro*squashfs-sysupgrade.bin 2>/dev/null || true)
+          SYSUPGRADE_FILES=$(ls "$FIRMWARE_DIR"/*oray_x1pro-v1-ubootmod*squashfs-sysupgrade.bin 2>/dev/null || true)
           echo "Found sysupgrade files:"
           echo "$SYSUPGRADE_FILES"
           if [ -z "$SYSUPGRADE_FILES" ]; then
@@ -366,7 +353,7 @@ jobs:
           body_path: release.txt
           prerelease: ${{ env.PRERELEASE == 'true' }}
           files: |
-            openwrt/bin/targets/mediatek/filogic/*oray_x1_pro*-squashfs-sysupgrade.bin
+            openwrt/bin/targets/mediatek/filogic/*oray_x1pro-v1-ubootmod*squashfs-sysupgrade.bin
 
       - name: Delete old workflow runs
         uses: Mattraks/delete-workflow-runs@v2
