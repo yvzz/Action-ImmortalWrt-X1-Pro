@@ -23,7 +23,7 @@ on:
         description: '保留天数（0 = 除正在运行的全部删除）'
         required: true
         type: number
-        default: 1
+        default: 30
   schedule:
     - cron: 0 3 * * 0
 
