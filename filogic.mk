@@ -2637,7 +2637,7 @@ define Device/oray_x1pro-v1-ubootmod
   DEVICE_VARIANT := v1 ubootmod
   DEVICE_DTS := mt7981b-oray-x1pro-v1-ubootmod
   DEVICE_DTS_DIR := ../dts
-  SUPPORTED_DEVICES += R47
+  SUPPORTED_DEVICES += R47 cudy_tr3000-v1-ubootmod
   UBINIZE_OPTS := -E 5
   BLOCKSIZE := 128k
   PAGESIZE := 2048
