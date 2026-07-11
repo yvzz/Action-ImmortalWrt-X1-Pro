@@ -125,11 +125,11 @@ jobs:
           cp $GITHUB_WORKSPACE/$FEEDS_CONF .
 
       - name: Update & Install feeds
-        timeout-minutes: 15
+        timeout-minutes: 10
         run: |
-          # 使用 shallow clone 加速首次 clone
-          GIT_SHALLOW=1 ./scripts/feeds update -a
-          GIT_SHALLOW=1 ./scripts/feeds install -a
+          ./scripts/feeds update -a
+          # 只 install 需要的 feeds，跳过已在 diy-part1.sh 里直接 clone 的
+          ./scripts/feeds install packages luci routing telephony istore
 
       - name: Load custom configuration
         run: |
@@ -260,10 +260,11 @@ jobs:
 
       - name: Update & Install feeds
         working-directory: /workdir/openwrt
-        timeout-minutes: 15
+        timeout-minutes: 10
         run: |
           ./scripts/feeds update -a
-          ./scripts/feeds install -a
+          # 只 install 需要的 feeds，跳过已在 diy-part1.sh 里直接 clone 的
+          ./scripts/feeds install packages luci routing telephony istore
 
       - name: Load custom configuration
         run: |
