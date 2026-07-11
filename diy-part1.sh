@@ -12,6 +12,10 @@ echo "=== DIY Part 1: X1 Pro setup ==="
 
 # 1. Clone third-party packages into package/ (参照 TR3000)
 #    直接 clone 避免 feeds 分支/index 问题
+mkdir -p "$OPENWRT/package"
+git clone --depth=1 https://github.com/eamonxg/luci-theme-aurora "$OPENWRT/package/luci-theme-aurora"
+git clone --depth=1 https://github.com/eamonxg/luci-app-aurora-config "$OPENWRT/package/luci-app-aurora-config"
+echo "  → aurora packages cloned"
 
 # 2. Copy DTS files
 DTS_DIR="$OPENWRT/target/linux/mediatek/files/arch/arm64/boot/dts/mediatek/"
