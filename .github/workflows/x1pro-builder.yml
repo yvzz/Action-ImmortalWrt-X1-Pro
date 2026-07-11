@@ -252,6 +252,8 @@ jobs:
       - name: Update & Install feeds
         working-directory: /workdir/openwrt
         run: |
+          # 强制重新 clone 第三方 feeds（分支变更后需要）
+          rm -rf feeds/aurora feeds/aurora_config
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
