@@ -41,24 +41,16 @@ include $(INCLUDE_DIR)/package.mk
 define Package/zoneinfo-all
   SECTION:=utils
   CATEGORY:=Utilities
-  TITLE:=All timezones (metapackage)
+  TITLE:=Asia timezones (metapackage)
   DEPENDS:= \
 	+zoneinfo-core \
 	+zoneinfo-simple \
-	+zoneinfo-africa \
-	+zoneinfo-america \
-	+zoneinfo-poles \
-	+zoneinfo-asia \
-	+zoneinfo-atlantic \
-	+zoneinfo-australia-nz \
-	+zoneinfo-pacific \
-	+zoneinfo-europe \
-	+zoneinfo-indian
+	+zoneinfo-asia
   PKGARCH:=all
 endef
 
 define Package/zoneinfo-all/description
-  Meta-package that depends on all available zoneinfo sets
+  Meta-package that depends on Asia zoneinfo sets
 endef
 
 define Build/Configure
