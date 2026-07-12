@@ -128,8 +128,8 @@ jobs:
         timeout-minutes: 10
         run: |
           ./scripts/feeds update -a
-          # 只 install 需要的 feeds，跳过已在 diy-part1.sh 里直接 clone 的
-          ./scripts/feeds install packages luci routing luci-app-openclash
+          # 安装全部 feeds（包含 zoneinfo-all 等所有子包），bandix/luci-app-* 的依赖都在
+          ./scripts/feeds install -a
 
       - name: Load custom configuration
         run: |
@@ -263,8 +263,8 @@ jobs:
         timeout-minutes: 10
         run: |
           ./scripts/feeds update -a
-          # 只 install 需要的 feeds，跳过已在 diy-part1.sh 里直接 clone 的
-          ./scripts/feeds install packages luci routing luci-app-openclash
+          # 安装全部 feeds（包含 zoneinfo-all 等所有子包），bandix/luci-app-* 的依赖都在
+          ./scripts/feeds install -a
 
       - name: Load custom configuration
         run: |

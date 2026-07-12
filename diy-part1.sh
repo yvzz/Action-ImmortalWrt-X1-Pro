@@ -19,6 +19,61 @@ git clone --depth=1 https://github.com/timsaya/luci-app-bandix  "$OPENWRT/packag
 git clone --depth=1 https://github.com/timsaya/openwrt-bandix  "$OPENWRT/package/openwrt-bandix"
 echo "  → aurora packages cloned"
 
+# 1b. Fix bandix Makefile: zoneinfo-all 不存在于 feeds/packages，替换为实际存在的包
+BANDIX_MK="$OPENWRT/package/openwrt-bandix/openwrt-bandix/Makefile"
+if [ -f "$BANDIX_MK" ]; then
+  if grep -q 'zoneinfo-all' "$BANDIX_MK"; then
+    echo "  → bandix Makefile: zoneinfo-all kept (local metapackage will provide it)"
+  fi
+fi
+
+# 1c. 创建 zoneinfo-all 本地 metapackage（bandix 依赖它）
+mkdir -p "$OPENWRT/package/zoneinfo-all"
+cat > "$OPENWRT/package/zoneinfo-all/Makefile" << 'MAKEFILE_EOF'
+include $(TOPDIR)/rules.mk
+
+PKG_NAME:=zoneinfo-all
+PKG_VERSION:=1
+PKG_RELEASE:=1
+
+include $(INCLUDE_DIR)/package.mk
+
+define Package/zoneinfo-all
+  SECTION:=utils
+  CATEGORY:=Utilities
+  TITLE:=All timezones (metapackage)
+  DEPENDS:= \
+	+zoneinfo-core \
+	+zoneinfo-simple \
+	+zoneinfo-africa \
+	+zoneinfo-america \
+	+zoneinfo-poles \
+	+zoneinfo-asia \
+	+zoneinfo-atlantic \
+	+zoneinfo-australia-nz \
+	+zoneinfo-pacific \
+	+zoneinfo-europe \
+	+zoneinfo-indian
+  PKGARCH:=all
+endef
+
+define Package/zoneinfo-all/description
+  Meta-package that depends on all available zoneinfo sets
+endef
+
+define Build/Configure
+endef
+define Build/Compile
+endef
+
+define Package/zoneinfo-all/install
+	$(INSTALL_DIR) $(1)
+endef
+
+$(eval $(call BuildPackage,zoneinfo-all))
+MAKEFILE_EOF
+echo "  → zoneinfo-all metapackage created"
+
 # 2. Copy DTS files
 DTS_DIR="$OPENWRT/target/linux/mediatek/files/arch/arm64/boot/dts/mediatek/"
 mkdir -p "$DTS_DIR"
