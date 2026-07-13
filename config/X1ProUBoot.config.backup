@@ -233,7 +233,7 @@ CONFIG_DEFAULT_kmod-ipt-nat=y
 CONFIG_DEFAULT_kmod-ipt-nat6=y
 CONFIG_DEFAULT_kmod-ipt-physdev=y
 CONFIG_DEFAULT_kmod-leds-gpio=y
-CONFIG_DEFAULT_kmod-mt7915e=y
+# CONFIG_DEFAULT_kmod-mt7915e is not set
 # CONFIG_DEFAULT_kmod-mt7981-firmware is not set
 CONFIG_DEFAULT_kmod-nf-ipvs=y
 CONFIG_DEFAULT_kmod-nf-nathelper=y
@@ -6832,7 +6832,7 @@ CONFIG_MTK_CONNINFRA_APSOC_MT7981=y
 CONFIG_CONNINFRA_EMI_SUPPORT=y
 # CONFIG_FPGA_EARLY_PORTING is not set
 CONFIG_CONNINFRA_AUTO_UP=y
-# CONFIG_PACKAGE_kmod-mt_wifi is not set  
+CONFIG_PACKAGE_kmod-mt_wifi=y  
 CONFIG_MTK_SUPPORT_OPENWRT=y
 CONFIG_MTK_WIFI_DRIVER=y
 # CONFIG_MTK_FIRST_IF_NONE is not set
