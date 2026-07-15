@@ -105,14 +105,3 @@ jobs:
         done < /tmp/ids-to-delete.txt
 
         echo "Done"
-
-    - name: Delete Old Releases
-      env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: |
-        KEEP=5
-        RELEASES=$(gh release list -R ${{ github.repository }} --limit 100 --json tagName,createdAt -q 'sort_by(.createdAt) | reverse | .['"$KEEP"':] | .[].tagName')
-        for tag in $RELEASES; do
-          echo "Deleting release: $tag"
-          gh release delete "$tag" -R ${{ github.repository }} --yes --cleanup-tag
-        done
