@@ -1,48 +1,25 @@
-name: Build ImmortalWrt 128m
+name: Build ImmortalWrt X1Pro
+
 permissions:
   contents: write
-  actions: write  # Mattraks/delete-workflow-runs 需要
+  actions: write
 
 on:
-  # push:
-  #   branches:
-  #     - main
   schedule:
-    - cron: 0 15 * * *
+    - cron: 0 15 * * *   # UTC 15:00 = 北京 23:00
   repository_dispatch:
     types: [ "X1Pro Update" ]
   workflow_dispatch:
     inputs:
-      repo:
-        description: '指定源码仓库地址'
+      target:
+        description: '选择编译目标'
         required: true
-        type: string
-        default: 'https://github.com/yvzz/immortalwrt-mt798x-6.6'
-      commit:
-        description: '指定源码commit进行编译，留空拉取最新源码'
-        required: false
-        type: string
-        default: ''
-      ssh:
-        description: '是否执行 make menuconfig'
-        required: false
-        type: boolean
-        default: false
-      verbose:
-        description: '启用详细编译日志 V=s（出错调试用）'
-        required: false
-        type: boolean
-        default: false
-      release:
-        description: '是否发布编译产物到 Release'
-        required: false
-        type: boolean
-        default: true
-      prerelease:
-        description: '是否发布为预发布版本 (Pre-release)'
-        required: false
-        type: boolean
-        default: false
+        type: choice
+        default: 'all'
+        options:
+          - 'oray_x1pro-v1'
+          - 'oray_x1pro-v1-ubootmod'
+          - 'all'
       proxy:
         description: '选择代理软件'
         required: false
@@ -53,6 +30,41 @@ on:
           - 'openclash'
           - 'passwall'
           - 'homeproxy'
+      notes:
+        description: '编译备注（将写入 Release 页面）'
+        required: false
+        type: string
+        default: ''
+      repo:
+        description: '指定源码仓库地址'
+        required: true
+        type: string
+        default: 'https://github.com/yvzz/immortalwrt-mt798x-6.6'
+      commit:
+        description: '指定源码commit，留空拉取最新'
+        required: false
+        type: string
+        default: ''
+      ssh:
+        description: 'SSH 调试 (make menuconfig)'
+        required: false
+        type: boolean
+        default: false
+      verbose:
+        description: '详细编译日志 V=s'
+        required: false
+        type: boolean
+        default: false
+      release:
+        description: '发布到 Release'
+        required: false
+        type: boolean
+        default: true
+      prerelease:
+        description: '发布为预发布版本'
+        required: false
+        type: boolean
+        default: false
 
 env:
   CCACHE_DIR: /workdir/.ccache
@@ -63,42 +75,59 @@ env:
   FEEDS_CONF: feeds.conf.default
   DIY_P1_SH: diy-part1.sh
   DIY_P2_SH: diy-part2.sh
-  CONFIG_BASE: config/128m
   UPLOAD_RELEASE: ${{ github.event.inputs.release || github.event.client_payload.release || 'true' }}
   PRERELEASE: ${{ github.event.inputs.prerelease }}
   PROXY: ${{ github.event.inputs.proxy || github.event.client_payload.proxy || 'none' }}
+  BUILD_NOTES: ${{ github.event.inputs.notes || github.event.client_payload.notes || '' }}
   TZ: Asia/Shanghai
 
 jobs:
+  # ── 计算构建矩阵 ──────────────────────────────────
+  setup:
+    name: Setup Build Matrix
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - name: Compute target matrix
+        id: set-matrix
+        run: |
+          TARGET="${{ github.event.inputs.target || github.event.client_payload.target || 'all' }}"
+          if [ "$TARGET" = "all" ]; then
+            echo 'matrix={"target":["oray_x1pro-v1","oray_x1pro-v1-ubootmod"]}' >> $GITHUB_OUTPUT
+          else
+            echo "matrix={\"target\":[\"$TARGET\"]}" >> $GITHUB_OUTPUT
+          fi
+
+  # ── SSH 调试（仅手动触发 + ssh=true 时） ──────────
   menuconfig:
-    name: Menuconfig & Push
+    name: Menuconfig (${{ matrix.target }})
     if: github.event.inputs.ssh == 'true'
+    needs: setup
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.setup.outputs.matrix) }}
     runs-on: ubuntu-24.04
     steps:
-      - name: Resolve Config File
+      - name: Resolve vars
         run: |
+          T="${{ matrix.target }}"
+          FW_GLOB="*${T}*"
+          echo "FW_GLOB=$FW_GLOB" >> $GITHUB_ENV
+          case "$T" in
+            oray_x1pro-v1)            echo "CONFIG_BASE=config/128m" >> $GITHUB_ENV ;;
+            oray_x1pro-v1-ubootmod)  echo "CONFIG_BASE=config/128muboot" >> $GITHUB_ENV ;;
+          esac
           if [ "${{ env.PROXY }}" = "none" ]; then
-            echo "CONFIG_FILE=${{ env.CONFIG_BASE }}.config" >> $GITHUB_ENV
+            echo "CONFIG_FILE=${CONFIG_BASE}.config" >> $GITHUB_ENV
           else
-            echo "CONFIG_FILE=${{ env.CONFIG_BASE }}-${{ env.PROXY }}.config" >> $GITHUB_ENV
+            echo "CONFIG_FILE=${CONFIG_BASE}-${{ env.PROXY }}.config" >> $GITHUB_ENV
           fi
-          echo "Using config: $CONFIG_FILE"
+          echo "Target: $T | Config: $CONFIG_FILE | FW: $FW_GLOB"
 
       - name: Check Server Performance
         run: |
-          echo "警告⚠"
-          echo "分配的服务器性能有限，若选择的插件过多，务必注意CPU性能！"
-          echo -e "已知CPU型号(降序): 9V74，7763，8370C，8272CL，8171M，E5-2673\n"
-          echo "--------------------------CPU信息--------------------------"
-          echo "CPU物理数量: $(cat /proc/cpuinfo | grep "physical id" | sort | uniq | wc -l)"
-          echo "CPU核心数量: $(nproc)"
-          echo -e "CPU型号信息:$(cat /proc/cpuinfo | grep -m1 name | awk -F: '{print $2}')\n"
-          echo "--------------------------内存信息--------------------------"
-          echo "已安装内存详细信息:"
-          echo -e "$(sudo lshw -short -C memory | grep GiB)\n"
-          echo "--------------------------硬盘信息--------------------------"
-          echo "硬盘数量: $(ls /dev/sd* | grep -v [1-9] | wc -l)" && df -hT
-      
+          echo "CPU: $(nproc) cores | $(cat /proc/cpuinfo | grep -m1 name | awk -F: '{print $2}')"
 
       - name: Checkout
         uses: actions/checkout@v7
@@ -111,11 +140,13 @@ jobs:
           sudo mkdir -p /workdir
           sudo chown $USER:$GROUPS /workdir
 
-      - name: Clone source code
+      - name: Clone source & apply patches
         working-directory: /workdir
         run: |
           git clone $REPO_URL -b $REPO_BRANCH --single-branch --filter=blob:none openwrt
           ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
+          cd openwrt
+          cp $GITHUB_WORKSPACE/$FEEDS_CONF .
 
       - name: Cache OpenWrt feeds
         uses: actions/cache@v6
@@ -125,95 +156,79 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-openwrt-feeds-${{ env.REPO_BRANCH }}-
 
-      - name: Copy previous config if exists
+      - name: Copy previous config
         run: |
           if [ -f "$GITHUB_WORKSPACE/${CONFIG_FILE}" ]; then
             cp -f "$GITHUB_WORKSPACE/${CONFIG_FILE}" /workdir/openwrt/.config
           fi
 
-      - name: Apply patches
-        working-directory: /workdir/openwrt
-        run: |
-          # --- X1Pro 设备支持已集成到上游源码，无需复制 ---
-          # mkdir -p target/linux/mediatek/dts
-          # cp $GITHUB_WORKSPACE/mt7981b-oray-x1pro-v1.dtsi target/linux/mediatek/dts/
-          # cp $GITHUB_WORKSPACE/mt7981b-oray-x1pro-v1.dts target/linux/mediatek/dts/
-          # cp $GITHUB_WORKSPACE/mt7981b-oray-x1pro-v1-ubootmod.dts target/linux/mediatek/dts/
-          # cp $GITHUB_WORKSPACE/filogic.mk target/linux/mediatek/image/
-          # 复制 feeds 配置
-          cp $GITHUB_WORKSPACE/$FEEDS_CONF .
-
       - name: Update & Install feeds
         timeout-minutes: 10
+        working-directory: /workdir/openwrt
         run: |
           ./scripts/feeds update -a
-          # 安装全部 feeds（bandix/luci-app-* 的依赖都在）
-          # 时区包依赖通过本地 x1pro-zoneinfo metapackage 提供
           ./scripts/feeds install -a
 
-      - name: Load custom configuration
+      - name: Load config & apply diy scripts
         run: |
-          [ -e $CONFIG_FILE ] && cp -f $CONFIG_FILE openwrt/.config
-          chmod +x $DIY_P1_SH
-          $GITHUB_WORKSPACE/$DIY_P1_SH
-          chmod +x $DIY_P2_SH
-          cd openwrt
-          $GITHUB_WORKSPACE/$DIY_P2_SH
+          [ -e "$CONFIG_FILE" ] && cp -f "$CONFIG_FILE" openwrt/.config
+          chmod +x $DIY_P1_SH && $GITHUB_WORKSPACE/$DIY_P1_SH
+          chmod +x $DIY_P2_SH && cd openwrt && $GITHUB_WORKSPACE/$DIY_P2_SH
 
-      - name: SSH connection to Menuconfig
+      - name: SSH to menuconfig
         uses: mxschmitt/action-tmate@v3
         timeout-minutes: 15
 
-      - name: Push config to main branch
+      - name: Push config
         run: |
-          SRC="/workdir/openwrt/.config"
-          DST="$GITHUB_WORKSPACE/${CONFIG_FILE}"
-          mkdir -p "$(dirname "$DST")"
-          cp -f "$SRC" "$DST"
+          cp -f /workdir/openwrt/.config "$GITHUB_WORKSPACE/${CONFIG_FILE}"
           cd "$GITHUB_WORKSPACE"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add "$CONFIG_FILE"
-          CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
           git diff --cached --quiet || (
             git commit -m "Update config: ${CONFIG_FILE}" || true
-            git pull --rebase origin $CURRENT_BRANCH
-            git push -f origin HEAD:$CURRENT_BRANCH
+            git pull --rebase origin $(git rev-parse --abbrev-ref HEAD)
+            git push -f origin HEAD:$(git rev-parse --abbrev-ref HEAD)
           )
 
+  # ── 编译 ──────────────────────────────────────────
   build:
-    name: Build X1Pro Firmware
+    name: Build (${{ matrix.target }}, ${{ env.PROXY }})
+    needs: setup
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.setup.outputs.matrix) }}
     runs-on: ubuntu-24.04
 
     steps:
-      - name: Resolve Config File
+      - name: Resolve vars
         run: |
+          T="${{ matrix.target }}"
+          FW_GLOB="*${T}*"
+          echo "FW_GLOB=$FW_GLOB" >> $GITHUB_ENV
+          case "$T" in
+            oray_x1pro-v1)            echo "CONFIG_BASE=config/128m" >> $GITHUB_ENV ;;
+            oray_x1pro-v1-ubootmod)  echo "CONFIG_BASE=config/128muboot" >> $GITHUB_ENV ;;
+          esac
           if [ "${{ env.PROXY }}" = "none" ]; then
-            echo "CONFIG_FILE=${{ env.CONFIG_BASE }}.config" >> $GITHUB_ENV
+            echo "CONFIG_FILE=${CONFIG_BASE}.config" >> $GITHUB_ENV
           else
-            echo "CONFIG_FILE=${{ env.CONFIG_BASE }}-${{ env.PROXY }}.config" >> $GITHUB_ENV
+            echo "CONFIG_FILE=${CONFIG_BASE}-${{ env.PROXY }}.config" >> $GITHUB_ENV
           fi
-          echo "Using config: $CONFIG_FILE"
+          echo "Target: $T | Config: $CONFIG_FILE | FW: $FW_GLOB"
 
       - name: Check Server Performance
         run: |
-          echo "警告⚠"
-          echo "分配的服务器性能有限，若选择的插件过多，务必注意CPU性能！"
-          echo -e "已知CPU型号(降序): 9V74，7763，8370C，8272CL，8171M，E5-2673\n"
-          echo "--------------------------CPU信息--------------------------"
           echo "CPU物理数量: $(cat /proc/cpuinfo | grep "physical id" | sort | uniq | wc -l)"
           echo "CPU核心数量: $(nproc)"
-          echo -e "CPU型号信息:$(cat /proc/cpuinfo | grep -m1 name | awk -F: '{print $2}')\n"
-          echo "--------------------------内存信息--------------------------"
-          echo "已安装内存详细信息:"
-          echo -e "$(sudo lshw -short -C memory | grep GiB)\n"
-          echo "--------------------------硬盘信息--------------------------"
-          echo "硬盘数量: $(ls /dev/sd* | grep -v [1-9] | wc -l)" && df -hT
-      
+          echo "CPU型号: $(cat /proc/cpuinfo | grep -m1 name | awk -F: '{print $2}')"
+          echo "内存: $(free -h | grep Mem | awk '{print $2}')"
+
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Set BUILD_DATE env
+      - name: Set BUILD_DATE
         run: |
           BUILD_DATE=$(date +'%Y%m%d')
           echo "BUILD_DATE=$BUILD_DATE" >> $GITHUB_ENV
@@ -277,13 +292,6 @@ jobs:
       - name: Apply patches
         working-directory: /workdir/openwrt
         run: |
-          # --- X1Pro 设备支持已集成到上游源码，无需复制 ---
-          # mkdir -p target/linux/mediatek/dts
-          # cp $GITHUB_WORKSPACE/mt7981b-oray-x1pro-v1.dtsi target/linux/mediatek/dts/
-          # cp $GITHUB_WORKSPACE/mt7981b-oray-x1pro-v1.dts target/linux/mediatek/dts/
-          # cp $GITHUB_WORKSPACE/mt7981b-oray-x1pro-v1-ubootmod.dts target/linux/mediatek/dts/
-          # cp $GITHUB_WORKSPACE/filogic.mk target/linux/mediatek/image/
-          # 复制 feeds 配置
           cp $GITHUB_WORKSPACE/$FEEDS_CONF .
 
       - name: Update & Install feeds
@@ -291,22 +299,16 @@ jobs:
         timeout-minutes: 10
         run: |
           ./scripts/feeds update -a
-          # 安装全部 feeds（bandix/luci-app-* 的依赖都在）
-          # 时区包依赖通过本地 x1pro-zoneinfo metapackage 提供
           ./scripts/feeds install -a
 
       - name: Load custom configuration
         run: |
           cd openwrt
-          # 使用预先生成的完整配置
           cp -f $GITHUB_WORKSPACE/$CONFIG_FILE .config
-          # 添加 X1 Pro 设备支持（DTS、filogic.mk、board.d 补丁）
           chmod +x $GITHUB_WORKSPACE/$DIY_P1_SH
           $GITHUB_WORKSPACE/$DIY_P1_SH
-          # Rust LLVM 修复 + 编译日期
           chmod +x $GITHUB_WORKSPACE/$DIY_P2_SH
           $GITHUB_WORKSPACE/$DIY_P2_SH
-          # 应用 defconfig 确保依赖完整
           make defconfig
 
       - name: Compile Firmware
@@ -314,8 +316,7 @@ jobs:
         run: |
           cd openwrt
 
-          # GitHub 免费 runner 只有 7GB RAM，编译大量包容易 OOM
-          # 增加 4GB swap + 限制并行数为 2 核
+          # GitHub 免费 runner 7GB RAM，加 swap + 限并行
           sudo fallocate -l 4G /swapfile 2>/dev/null || sudo dd if=/dev/zero of=/swapfile bs=1M count=4096
           sudo chmod 600 /swapfile
           sudo mkswap /swapfile
@@ -323,11 +324,9 @@ jobs:
           NPROC=$(($(nproc) > 4 ? 4 : $(nproc)))
           echo "CPU: $(nproc) cores, using -j${NPROC}"
 
-          # 下载所有依赖
           make download -j${NPROC}
 
-          # binutils-2.42 readelf.c 使用了 glibc 专有的 off64_t / fseeko64，
-          # musl libc 不支持，直接 patch 源码用 off_t / fseeko 替代
+          # binutils readelf.c musl 修复
           make toolchain/binutils/prepare V=s 2>/dev/null || true
           for rf in build_dir/toolchain-*/binutils-*/binutils/readelf.c; do
             if [ -f "$rf" ]; then
@@ -336,21 +335,18 @@ jobs:
             fi
           done
 
-          # 编译，默认不开启详细日志，出错时可用 verbose 输入开启 V=s
           if [ "${{ inputs.verbose }}" = "true" ]; then
             make -j${NPROC} V=s 2>&1 | tee build.log
           else
             make -j${NPROC} 2>&1 | tee build.log
           fi
 
-          # 如果编译失败，打印最后200行日志帮助诊断
-          if ! find bin/targets -name "*oray_x1pro-v1*sysupgrade.bin" 2>/dev/null | grep -q .; then
-            echo "=== BUILD FAILED — last 200 lines of build.log ==="
+          if ! find bin/targets -name "${FW_GLOB}*sysupgrade.bin" 2>/dev/null | grep -q .; then
+            echo "=== BUILD FAILED — last 200 lines ==="
             tail -200 build.log || true
           fi
 
-          # 验证固件是否生成
-          SYSUPGRADE=$(find bin/targets -name "*oray_x1pro-v1*sysupgrade.bin" 2>/dev/null | head -1)
+          SYSUPGRADE=$(find bin/targets -name "${FW_GLOB}*sysupgrade.bin" 2>/dev/null | head -1)
           if [ -n "$SYSUPGRADE" ]; then
             echo "Firmware built: $SYSUPGRADE ($(du -h "$SYSUPGRADE" | cut -f1))"
             echo "name=$(basename "$SYSUPGRADE")" >> $GITHUB_OUTPUT
@@ -367,7 +363,7 @@ jobs:
       - name: List build artifacts
         run: |
           echo "=== Firmware artifacts ==="
-          find openwrt/bin/targets -name "*oray_x1pro-v1*" 2>/dev/null | while read f; do
+          find openwrt/bin/targets -name "${FW_GLOB}*" 2>/dev/null | while read f; do
             echo "  $(basename $f) ($(du -h "$f" | cut -f1))"
           done
 
@@ -385,31 +381,33 @@ jobs:
         uses: actions/upload-artifact@v7
         if: steps.compile.outputs.status == 'success'
         with:
-          name: ImmortalWrt_X1Pro-128m-openwrt-24.10-6.6-${{ env.PROXY }}-${{ env.BUILD_DATE }}
+          name: ImmortalWrt_X1Pro-${{ matrix.target }}-${{ env.PROXY }}-${{ env.BUILD_DATE }}
           path: |
-            openwrt/bin/targets/mediatek/filogic/*oray_x1pro-v1*sysupgrade.bin
+            openwrt/bin/targets/mediatek/filogic/${FW_GLOB}*sysupgrade.bin
 
       - name: Generate Release Tag
         id: tag
         if: steps.compile.outputs.status == 'success' && env.UPLOAD_RELEASE == 'true'
         run: |
           BUILD_TIME=$(date +"%Y%m%d-%H%M")
-          RELEASE_TAG="ImmortalWrt-X1Pro-128m-${PROXY}-${BUILD_TIME}"
+          RELEASE_TAG="X1Pro-${BUILD_TIME}"
           echo "release_tag=$RELEASE_TAG" >> $GITHUB_OUTPUT
           echo "Release tag: $RELEASE_TAG"
 
           printf '%s\n' \
-            '## ImmortalWrt X1Pro Firmware Release' \
+            '## ImmortalWrt X1Pro Firmware' \
             '' \
-            'Device: Oray X1 Pro (ubootmod, 112M UBI)' \
-            'Branch: openwrt-24.10-6.6' \
-            'Supported Devices: R47' \
+            "**设备:** Oray X1 Pro" \
+            "**目标:** ${{ matrix.target }}" \
+            "**代理:** ${{ env.PROXY }}" \
+            "**分支:** openwrt-24.10-6.6" \
             '' \
-            '## Downloads' \
+            "$([ -n "${{ env.BUILD_NOTES }}" ] && printf '%s\n\n' "**备注:** ${{ env.BUILD_NOTES }}")" \
+            '## 📥 下载' \
             '' \
-            'Download from the Assets section below, then flash via uboot Web UI.' \
+            '从下方 Assets 下载 sysupgrade.bin，通过 uboot Web UI 刷入。' \
             '' \
-            'Built with GitHub Actions' \
+            '> 由 GitHub Actions 自动构建' \
             > release.txt
 
           echo "status=success" >> $GITHUB_OUTPUT
@@ -419,7 +417,7 @@ jobs:
         if: steps.tag.outputs.status == 'success'
         run: |
           FIRMWARE_DIR="openwrt/bin/targets/mediatek/filogic"
-          SYSUPGRADE_FILES=$(ls "$FIRMWARE_DIR"/*oray_x1pro-v1*squashfs-sysupgrade.bin 2>/dev/null || true)
+          SYSUPGRADE_FILES=$(ls "$FIRMWARE_DIR"/${FW_GLOB}*squashfs-sysupgrade.bin 2>/dev/null || true)
           echo "Found sysupgrade files:"
           echo "$SYSUPGRADE_FILES"
           if [ -z "$SYSUPGRADE_FILES" ]; then
@@ -439,11 +437,11 @@ jobs:
           body_path: release.txt
           prerelease: ${{ env.PRERELEASE == 'true' }}
           files: |
-            openwrt/bin/targets/mediatek/filogic/*oray_x1pro-v1*squashfs-sysupgrade.bin
+            openwrt/bin/targets/mediatek/filogic/${FW_GLOB}*squashfs-sysupgrade.bin
 
       - name: Delete old workflow runs
         uses: Mattraks/delete-workflow-runs@v2
         if: always()
         with:
           retain_days: 0
-          keep_minimum_runs: 5
+          keep_minimum_runs: 10
