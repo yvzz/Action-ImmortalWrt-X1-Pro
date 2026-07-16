@@ -1,6 +1,9 @@
 name: Delete Old Release
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
     inputs:
 
@@ -9,7 +12,7 @@ on:
         description: '清理孤立 Tag（无关联 Release 的 Tag）'
         required: false
         type: boolean
-        default: false
+        default: true
 
       do_releases:
         description: '清理旧 Release'
@@ -40,8 +43,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    # 勾选 do_tags 时运行；定时触发也运行
-    if: ${{ inputs.do_tags || github.event_name == 'schedule' }}
+    # push 触发、勾选 do_tags、定时触发均运行
+    if: ${{ github.event_name == 'push' || inputs.do_tags || github.event_name == 'schedule' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -54,7 +57,7 @@ jobs:
         run: |
           REPO=${{ github.repository }}
           echo "获取所有 Remote Tag..."
-          remote_tags=$(gh api repos/$REPO/git/matching-refs/tags --jq '.[].ref' 2>/dev/null)
+          remote_tags=$(gh api "repos/$REPO/git/matching-refs/tags" --paginate --jq '.[].ref' 2>/dev/null)
 
           if [ -z "$remote_tags" ]; then
             echo "没有 Tag"
@@ -67,10 +70,13 @@ jobs:
             release=$(gh release view "$tag" --json tagName --jq '.tagName' 2>/dev/null || true)
             if [ -z "$release" ]; then
               echo "  删除孤立 Tag: $tag"
-              # URL-encode tag name for safe API call
-              encoded_ref=$(printf '%s' "refs/tags/$tag" | python3 -c "import sys,urllib.parse; print(urllib.parse.quote(sys.stdin.read(), safe=''))")
-              gh api --method DELETE "repos/$REPO/git/$encoded_ref"
-              deleted=$((deleted + 1))
+              if gh api --method DELETE "repos/$REPO/git/refs/tags/$tag" \
+                   --silent 2>/tmp/nps_delete_err.log; then
+                deleted=$((deleted + 1))
+                echo "    ✓ 已删除"
+              else
+                echo "    ⚠ 删除失败: $(cat /tmp/nps_delete_err.log)"
+              fi
             else
               echo "  保留 (有 Release): $tag"
             fi
