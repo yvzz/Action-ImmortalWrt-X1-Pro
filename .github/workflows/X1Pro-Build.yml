@@ -15,11 +15,10 @@ on:
         description: '选择编译目标'
         required: true
         type: choice
-        default: 'all'
+        default: 'oray_x1pro-v1'
         options:
           - 'oray_x1pro-v1'
           - 'oray_x1pro-v1-ubootmod'
-          - 'all'
       proxy:
         description: '选择代理软件'
         required: false
@@ -250,60 +249,44 @@ jobs:
       - name: Multi-Device Compilation
         id: compile
         run: |
-          TARGET_INPUT="${{ github.event.inputs.target || github.event.client_payload.target || 'all' }}"
           PROXY="${{ env.PROXY }}"
           NPROC=$(($(nproc) > 4 ? 4 : $(nproc)))
 
-          # 确定设备列表
-          if [ "$TARGET_INPUT" = "all" ]; then
-            DEVICES="oray_x1pro-v1 oray_x1pro-v1-ubootmod"
+          # 选择配置（一个 .config 编译两个设备）
+          if [ "$PROXY" = "none" ]; then
+            CONFIG_FILE="config/x1pro.config"
           else
-            DEVICES="$TARGET_INPUT"
+            CONFIG_FILE="config/x1pro-${PROXY}.config"
           fi
+          echo "Config: $CONFIG_FILE"
 
           mkdir -p $GITHUB_WORKSPACE/firmware_collection
           cd /workdir/openwrt
 
-          for DEV in $DEVICES; do
-            echo "::group:: Building $DEV"
+          # 加载配置
+          cp -f "$GITHUB_WORKSPACE/$CONFIG_FILE" .config
 
-            # 解析 config 文件名
-            case "$DEV" in
-              oray_x1pro-v1)            CONFIG_PREFIX="config/128m" ;;
-              oray_x1pro-v1-ubootmod)   CONFIG_PREFIX="config/128muboot" ;;
-            esac
+          # 执行 diy 脚本
+          chmod +x "$GITHUB_WORKSPACE/$DIY_P1_SH"
+          "$GITHUB_WORKSPACE/$DIY_P1_SH"
+          chmod +x "$GITHUB_WORKSPACE/$DIY_P2_SH"
+          "$GITHUB_WORKSPACE/$DIY_P2_SH"
 
-            if [ "$PROXY" = "none" ]; then
-              CONFIG_FILE="${CONFIG_PREFIX}.config"
-            else
-              CONFIG_FILE="${CONFIG_PREFIX}-${PROXY}.config"
+          make defconfig
+          make download -j$NPROC
+
+          # 编译（一次 make 输出两个设备固件）
+          if [ "${{ inputs.verbose }}" = "true" ]; then
+            make -j1 V=s CC="ccache gcc" CXX="ccache g++" || exit 1
+          else
+            if ! make -j$NPROC CC="ccache gcc" CXX="ccache g++"; then
+              echo "Multi-threaded failed, retrying single-threaded..."
+              make -j1 V=s || exit 1
             fi
+          fi
 
-            echo "Config: $CONFIG_FILE"
-
-            # 加载配置
-            cp -f "$GITHUB_WORKSPACE/$CONFIG_FILE" .config
-
-            # 执行 diy 脚本（每个设备都要跑，因为可能设备相关）
-            chmod +x "$GITHUB_WORKSPACE/$DIY_P1_SH"
-            "$GITHUB_WORKSPACE/$DIY_P1_SH"
-            chmod +x "$GITHUB_WORKSPACE/$DIY_P2_SH"
-            "$GITHUB_WORKSPACE/$DIY_P2_SH"
-
-            make defconfig
-            make download -j$NPROC
-
-            # 编译
-            if [ "${{ inputs.verbose }}" = "true" ]; then
-              make -j1 V=s CC="ccache gcc" CXX="ccache g++" || exit 1
-            else
-              if ! make -j$NPROC CC="ccache gcc" CXX="ccache g++"; then
-                echo "Multi-threaded failed, retrying single-threaded..."
-                make -j1 V=s || exit 1
-              fi
-            fi
-
-            # 收集固件
+          # 收集两个设备固件
+          for DEV in oray_x1pro-v1 oray_x1pro-v1-ubootmod; do
             FW_GLOB="*${DEV}*"
             SYSUPGRADE=$(find bin/targets -name "${FW_GLOB}*sysupgrade.bin" 2>/dev/null | head -1)
             if [ -z "$SYSUPGRADE" ]; then
@@ -312,16 +295,11 @@ jobs:
               exit 1
             fi
             echo "Built: $SYSUPGRADE ($(du -h "$SYSUPGRADE" | cut -f1))"
-
-            find bin/targets -name "${FW_GLOB}*sysupgrade.bin" \
-              -exec cp {} "$GITHUB_WORKSPACE/firmware_collection/" \;
-
-            df -hT /workdir
-            echo "::endgroup::"
+            cp "$SYSUPGRADE" "$GITHUB_WORKSPACE/firmware_collection/"
           done
 
           echo "All devices compiled successfully"
-          echo "TARGET_INPUT=$TARGET_INPUT" >> $GITHUB_ENV
+          echo "DEVICES=oray_x1pro-v1 oray_x1pro-v1-ubootmod" >> $GITHUB_ENV
           echo "status=success" >> $GITHUB_OUTPUT
 
           # 列出产物
@@ -363,7 +341,7 @@ jobs:
 
           printf '## ImmortalWrt X1Pro Firmware\n\n'
           printf '**设备:** Oray X1 Pro\n'
-          printf '**目标:** %s\n' "${{ env.TARGET_INPUT }}"
+          printf '**目标:** %s\n' "${{ env.DEVICES }}"
           printf '**代理:** %s\n' "${{ env.PROXY }}"
           printf '**分支:** openwrt-24.10-6.6\n'
           if [ -n "${{ env.BUILD_NOTES }}" ]; then
