@@ -372,7 +372,7 @@ jobs:
           printf '\n## 固件\n'
           for f in $GITHUB_WORKSPACE/firmware_collection/*.bin; do
             [ -f "$f" ] || continue
-            printf '- %s (%s)\n' "$(basename "$f")" "$(du -h "$f" | cut -f1)"
+            echo "- $(basename "$f") ($(du -h "$f" | cut -f1))"
           done
           printf '\n## 📥 下载\n\n'
           printf '从下方 Assets 下载对应 sysupgrade.bin，通过 uboot Web UI 刷入。\n\n'
