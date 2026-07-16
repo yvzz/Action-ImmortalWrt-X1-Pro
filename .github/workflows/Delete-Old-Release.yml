@@ -54,7 +54,7 @@ jobs:
         run: |
           REPO=${{ github.repository }}
           echo "获取所有 Remote Tag..."
-          remote_tags=$(gh api repos/$REPO/tags --jq '.[].name' 2>/dev/null)
+          remote_tags=$(gh api repos/$REPO/git/matching-refs/tags --jq '.[].ref' 2>/dev/null)
 
           if [ -z "$remote_tags" ]; then
             echo "没有 Tag"
@@ -62,11 +62,14 @@ jobs:
           fi
 
           deleted=0
-          for tag in $remote_tags; do
+          for ref in $remote_tags; do
+            tag=$(echo "$ref" | sed 's|^refs/tags/||')
             release=$(gh release view "$tag" --json tagName --jq '.tagName' 2>/dev/null || true)
             if [ -z "$release" ]; then
               echo "  删除孤立 Tag: $tag"
-              gh api --method DELETE "repos/$REPO/git/refs/tags/$tag"
+              # URL-encode tag name for safe API call
+              encoded_ref=$(printf '%s' "refs/tags/$tag" | python3 -c "import sys,urllib.parse; print(urllib.parse.quote(sys.stdin.read(), safe=''))")
+              gh api --method DELETE "repos/$REPO/git/$encoded_ref"
               deleted=$((deleted + 1))
             else
               echo "  保留 (有 Release): $tag"
